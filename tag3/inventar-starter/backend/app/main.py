@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Query, HTTPException, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 import os
+import json
 from datetime import datetime
 import psycopg
 from .db import get_conn
@@ -14,10 +15,29 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "t
 MQTT_HOST = os.getenv("MQTT_HOST", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
+MQTT_TOPIC_ISSUED = os.getenv("MQTT_ASSIGNMENT_ISSUED_TOPIC", "inventory/assignments/issued")
+MQTT_TOPIC_RETURNED = os.getenv("MQTT_ASSIGNMENT_RETURNED_TOPIC", "inventory/assignments/returned")
+
 def mqtt_client() -> mqtt.Client:
     c = mqtt.Client()
     c.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
     return c
+
+
+def _publish_assignment_event(topic: str, row) -> None:
+    payload = {
+        "assignment_id": row["id"],
+        "device_id": row["device_id"],
+        "person_id": row["person_id"],
+        "issued_at": row["issued_at"].isoformat(sep=" ", timespec="seconds"),
+        "returned_at": row["returned_at"].isoformat(sep=" ", timespec="seconds") if row["returned_at"] else None,
+    }
+    try:
+        c = mqtt_client()
+        c.publish(topic, json.dumps(payload), qos=0, retain=False)
+        c.disconnect()
+    except Exception as exc:
+        print(f"[MQTT] Publish auf '{topic}' fehlgeschlagen:", exc)
 
 @app.get("/health")
 async def health():
@@ -119,7 +139,9 @@ def _create_assignment_row(cur, device_id: int, person_id: int, issued_at: datet
         """,
         (device_id, person_id, issued_at or datetime.now()),
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    _publish_assignment_event(MQTT_TOPIC_ISSUED, row)
+    return row
 
 
 def _return_assignment_row(cur, assignment_id: int, returned_at: datetime | None):
@@ -145,7 +167,9 @@ def _return_assignment_row(cur, assignment_id: int, returned_at: datetime | None
         """,
         (returned_at, assignment_id),
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    _publish_assignment_event(MQTT_TOPIC_RETURNED, row)
+    return row
 
 
 # -- JSON-API ---------------------------------------------------------------

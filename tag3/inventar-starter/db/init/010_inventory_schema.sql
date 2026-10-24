@@ -4,9 +4,9 @@
 --   1. Stammdaten-Tabellen (department, person, device_type, location)
 --   2. device
 --   3. assignment
--- Anschließend: Seed-Daten für den lokalen Testbetrieb.
+-- Seed-Daten für den lokalen Testbetrieb.
 
--- 1. Stammdaten -------------------------------------------------------
+-- 1. Stammdaten 
 
 CREATE TABLE department (
     id   SERIAL PRIMARY KEY,
@@ -31,7 +31,7 @@ CREATE TABLE location (
     name TEXT NOT NULL UNIQUE
 );
 
--- 2. Devices ------------------------------------------------------------
+-- 2. Devices 
 
 CREATE TABLE device (
     id              SERIAL PRIMARY KEY,
@@ -41,7 +41,7 @@ CREATE TABLE device (
     note            TEXT
 );
 
--- 3. Zuweisungen ----------------------------------------------------------
+-- 3. Zuweisungen 
 
 CREATE TABLE assignment (
     id          SERIAL PRIMARY KEY,
@@ -51,7 +51,7 @@ CREATE TABLE assignment (
     returned_at TIMESTAMP
 );
 
--- Seed-Daten --------------------------------------------------------------
+-- Seed-Daten 
 
 INSERT INTO department (name) VALUES
     ('IT'),

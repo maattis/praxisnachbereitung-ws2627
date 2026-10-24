@@ -10,13 +10,20 @@ from .models import DeviceCreate, AssignmentCreate, AssignmentReturn
 import paho.mqtt.client as mqtt
 
 app = FastAPI(title="Inventar Starter", version="0.1.0")
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+templates = Jinja2Templates(
+    directory=os.path.join(os.path.dirname(__file__), "templates")
+)
 
 MQTT_HOST = os.getenv("MQTT_HOST", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
-MQTT_TOPIC_ISSUED = os.getenv("MQTT_ASSIGNMENT_ISSUED_TOPIC", "inventory/assignments/issued")
-MQTT_TOPIC_RETURNED = os.getenv("MQTT_ASSIGNMENT_RETURNED_TOPIC", "inventory/assignments/returned")
+MQTT_TOPIC_ISSUED = os.getenv(
+    "MQTT_ASSIGNMENT_ISSUED_TOPIC", "inventory/assignments/issued"
+)
+MQTT_TOPIC_RETURNED = os.getenv(
+    "MQTT_ASSIGNMENT_RETURNED_TOPIC", "inventory/assignments/returned"
+)
+
 
 def mqtt_client() -> mqtt.Client:
     c = mqtt.Client()
@@ -30,7 +37,11 @@ def _publish_assignment_event(topic: str, row) -> None:
         "device_id": row["device_id"],
         "person_id": row["person_id"],
         "issued_at": row["issued_at"].isoformat(sep=" ", timespec="seconds"),
-        "returned_at": row["returned_at"].isoformat(sep=" ", timespec="seconds") if row["returned_at"] else None,
+        "returned_at": (
+            row["returned_at"].isoformat(sep=" ", timespec="seconds")
+            if row["returned_at"]
+            else None
+        ),
     }
     try:
         c = mqtt_client()
@@ -38,6 +49,7 @@ def _publish_assignment_event(topic: str, row) -> None:
         c.disconnect()
     except Exception as exc:
         print(f"[MQTT] Publish auf '{topic}' fehlgeschlagen:", exc)
+
 
 @app.get("/health")
 async def health():
@@ -56,18 +68,25 @@ async def health():
     except Exception as ex:
         mqtt_state = f"degraded:{type(ex).__name__}"
 
-    return {"status": "ok" if db_state == "ok" else "degraded", "db": db_state, "mqtt": mqtt_state}
+    return {
+        "status": "ok" if db_state == "ok" else "degraded",
+        "db": db_state,
+        "mqtt": mqtt_state,
+    }
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "title": "Inventar Starter"})
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "title": "Inventar Starter"}
+    )
 
 
-# -- Fachlogik (von JSON-API und HTML-Formularen gemeinsam genutzt) --------
+# -- Logik
+
 
 def _fetch_devices(cur):
-    cur.execute(
-        """
+    cur.execute("""
         select d.id, d.serial_number, d.device_type_id, dt.name as device_type_name,
                d.location_id, l.name as location_name, d.note,
                exists(
@@ -78,14 +97,12 @@ def _fetch_devices(cur):
         join device_type dt on dt.id = d.device_type_id
         join location l on l.id = d.location_id
         order by d.id
-        """
-    )
+        """)
     return cur.fetchall()
 
 
 def _fetch_active_assignments(cur):
-    cur.execute(
-        """
+    cur.execute("""
         select a.id, a.device_id, d.serial_number, a.person_id,
                p.first_name, p.last_name, a.issued_at, a.returned_at
         from assignment a
@@ -93,12 +110,13 @@ def _fetch_active_assignments(cur):
         join person p on p.id = a.person_id
         where a.returned_at is null
         order by a.issued_at desc
-        """
-    )
+        """)
     return cur.fetchall()
 
 
-def _create_device_row(cur, serial_number: str, device_type_id: int, location_id: int, note: str | None):
+def _create_device_row(
+    cur, serial_number: str, device_type_id: int, location_id: int, note: str | None
+):
     try:
         cur.execute(
             """
@@ -109,13 +127,19 @@ def _create_device_row(cur, serial_number: str, device_type_id: int, location_id
             (serial_number, device_type_id, location_id, note),
         )
     except psycopg.errors.UniqueViolation:
-        raise HTTPException(status_code=409, detail=f"serial_number '{serial_number}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"serial_number '{serial_number}' already exists"
+        )
     except psycopg.errors.ForeignKeyViolation:
-        raise HTTPException(status_code=422, detail="invalid device_type_id or location_id")
+        raise HTTPException(
+            status_code=422, detail="invalid device_type_id or location_id"
+        )
     return cur.fetchone()
 
 
-def _create_assignment_row(cur, device_id: int, person_id: int, issued_at: datetime | None):
+def _create_assignment_row(
+    cur, device_id: int, person_id: int, issued_at: datetime | None
+):
     cur.execute("select 1 from device where id = %s", (device_id,))
     if not cur.fetchone():
         raise HTTPException(status_code=404, detail="device not found")
@@ -129,7 +153,9 @@ def _create_assignment_row(cur, device_id: int, person_id: int, issued_at: datet
         (device_id,),
     )
     if cur.fetchone():
-        raise HTTPException(status_code=409, detail="device already has an active assignment")
+        raise HTTPException(
+            status_code=409, detail="device already has an active assignment"
+        )
 
     cur.execute(
         """
@@ -157,7 +183,9 @@ def _return_assignment_row(cur, assignment_id: int, returned_at: datetime | None
 
     returned_at = returned_at or datetime.now()
     if returned_at < row["issued_at"]:
-        raise HTTPException(status_code=422, detail="returned_at must not be before issued_at")
+        raise HTTPException(
+            status_code=422, detail="returned_at must not be before issued_at"
+        )
 
     cur.execute(
         """
@@ -172,7 +200,8 @@ def _return_assignment_row(cur, assignment_id: int, returned_at: datetime | None
     return row
 
 
-# -- JSON-API ---------------------------------------------------------------
+# -- JSON-API
+
 
 @app.get("/devices")
 async def list_devices():
@@ -183,7 +212,9 @@ async def list_devices():
 @app.post("/devices", status_code=201)
 async def create_device(data: DeviceCreate):
     with get_conn() as conn, conn.cursor() as cur:
-        return _create_device_row(cur, data.serial_number, data.device_type_id, data.location_id, data.note)
+        return _create_device_row(
+            cur, data.serial_number, data.device_type_id, data.location_id, data.note
+        )
 
 
 @app.get("/assignments/active")
@@ -195,7 +226,9 @@ async def list_active_assignments():
 @app.post("/assignments", status_code=201)
 async def create_assignment(data: AssignmentCreate):
     with get_conn() as conn, conn.cursor() as cur:
-        return _create_assignment_row(cur, data.device_id, data.person_id, data.issued_at)
+        return _create_assignment_row(
+            cur, data.device_id, data.person_id, data.issued_at
+        )
 
 
 @app.post("/assignments/{assignment_id}/return")
@@ -204,14 +237,14 @@ async def return_assignment(assignment_id: int, data: AssignmentReturn):
         return _return_assignment_row(cur, assignment_id, data.returned_at)
 
 
-# -- HTML-Oberfläche ----------------------------------------------------------
+# -- HTML-Oberfläche
+
 
 def _inventory_context(request: Request, cur, error: str | None = None):
     devices = _fetch_devices(cur)
     active_assignments = _fetch_active_assignments(cur)
 
-    cur.execute(
-        """
+    cur.execute("""
         select d.id, d.serial_number, dt.name as device_type_name, l.name as location_name
         from device d
         join device_type dt on dt.id = d.device_type_id
@@ -220,11 +253,12 @@ def _inventory_context(request: Request, cur, error: str | None = None):
             select 1 from assignment a where a.device_id = d.id and a.returned_at is null
         )
         order by d.serial_number
-        """
-    )
+        """)
     available_devices = cur.fetchall()
 
-    cur.execute("select id, first_name, last_name from person order by last_name, first_name")
+    cur.execute(
+        "select id, first_name, last_name from person order by last_name, first_name"
+    )
     persons = cur.fetchall()
 
     cur.execute("select id, name from device_type order by name")
@@ -263,10 +297,14 @@ async def inventory_create_device(
 ):
     with get_conn() as conn, conn.cursor() as cur:
         try:
-            _create_device_row(cur, serial_number, device_type_id, location_id, note or None)
+            _create_device_row(
+                cur, serial_number, device_type_id, location_id, note or None
+            )
         except HTTPException as exc:
             context = _inventory_context(request, cur, error=exc.detail)
-            return templates.TemplateResponse("inventory.html", context, status_code=exc.status_code)
+            return templates.TemplateResponse(
+                "inventory.html", context, status_code=exc.status_code
+            )
     return RedirectResponse("/inventory", status_code=303)
 
 
@@ -281,7 +319,9 @@ async def inventory_create_assignment(
             _create_assignment_row(cur, device_id, person_id, None)
         except HTTPException as exc:
             context = _inventory_context(request, cur, error=exc.detail)
-            return templates.TemplateResponse("inventory.html", context, status_code=exc.status_code)
+            return templates.TemplateResponse(
+                "inventory.html", context, status_code=exc.status_code
+            )
     return RedirectResponse("/inventory", status_code=303)
 
 
@@ -292,7 +332,9 @@ async def inventory_return_assignment(request: Request, assignment_id: int):
             _return_assignment_row(cur, assignment_id, None)
         except HTTPException as exc:
             context = _inventory_context(request, cur, error=exc.detail)
-            return templates.TemplateResponse("inventory.html", context, status_code=exc.status_code)
+            return templates.TemplateResponse(
+                "inventory.html", context, status_code=exc.status_code
+            )
     return RedirectResponse("/inventory", status_code=303)
 
 

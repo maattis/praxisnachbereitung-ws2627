@@ -1,9 +1,5 @@
+from datetime import datetime
 from pydantic import BaseModel
-
-
-# Hinweis:
-# Diese Modelle sind nur ein möglicher Startpunkt für die Übung.
-# Ihr dürft Felder ergänzen, umbenennen oder weitere Modelle anlegen.
 
 
 class DeviceCreate(BaseModel):
@@ -16,9 +12,8 @@ class DeviceCreate(BaseModel):
 class AssignmentCreate(BaseModel):
   device_id: int
   person_id: int
-  issued_at: str | None = None
+  issued_at: datetime | None = None
 
 
 class AssignmentReturn(BaseModel):
-  returned_at: str | None = None
-
+  returned_at: datetime | None = None

@@ -40,3 +40,5 @@ services:
     volumes:
       - ./backend:/app/backend:rw
       - ./.env:/app/.env:ro
+      - ./alembic.ini:/app/alembic.ini:rw
+      - ./alembic:/app/alembic:rw

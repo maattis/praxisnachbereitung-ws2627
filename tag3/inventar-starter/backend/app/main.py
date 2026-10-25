@@ -1,7 +1,15 @@
 from fastapi import FastAPI, Request, Query, HTTPException, Form
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse,
+    StreamingResponse,
+    Response,
+)
 import os
+import io
+import csv
+import pandas as pd
 import json
 from datetime import datetime
 import psycopg
@@ -344,3 +352,88 @@ async def mqtt_publish(topic: str = Query(...), payload: str = Query(...)):
     c.publish(topic, payload, qos=0, retain=False)
     c.disconnect()
     return {"ok": True, "topic": topic, "payload": payload}
+
+
+def _fetch_export_data(cur) -> list[dict]:
+    """
+    Fetch comprehensive assignment data joining all relevant tables for reporting.
+
+    Args:
+        cur: Database cursor object.
+
+    Returns:
+        List of dictionaries containing the joined assignment data.
+    """
+    cur.execute("""
+        SELECT 
+            a.id AS assignment_id,
+            d.serial_number,
+            dt.name AS device_type,
+            l.name AS location,
+            p.first_name,
+            p.last_name,
+            p.email,
+            a.issued_at,
+            a.returned_at,
+            a.damage_note
+        FROM assignment a
+        JOIN device d ON a.device_id = d.id
+        JOIN device_type dt ON d.device_type_id = dt.id
+        JOIN location l ON d.location_id = l.id
+        JOIN person p ON a.person_id = p.id
+        ORDER BY a.issued_at DESC
+    """)
+    return cur.fetchall()
+
+
+@app.get("/assignments.csv")
+async def export_assignments_csv():
+    """
+    Export assignments data as a CSV file using semicolon delimiters.
+
+    Returns:
+        StreamingResponse streaming the CSV file.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        data = _fetch_export_data(cur)
+
+    output = io.StringIO()
+    if data:
+        writer = csv.DictWriter(output, fieldnames=data[0].keys(), delimiter=";")
+        writer.writeheader()
+        writer.writerows(data)
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=assignments.csv"},
+    )
+
+
+@app.get("/assignments.xlsx")
+async def export_assignments_xlsx():
+    """
+    Export assignments data as an Excel (XLSX) file using pandas.
+
+    Returns:
+        Response containing the binary XLSX file data.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        data = _fetch_export_data(cur)
+
+    df = pd.DataFrame(data)
+
+    # Remove timezone awareness if necessary for Excel compatibility
+    for col in ["issued_at", "returned_at"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col]).dt.tz_localize(None)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Assignments")
+
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=assignments.xlsx"},
+    )

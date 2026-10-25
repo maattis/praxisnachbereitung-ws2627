@@ -1,0 +1,4 @@
+assignment_id;serial_number;device_type;location;first_name;last_name;email;issued_at;returned_at;damage_note
+2;LT-1002;Laptop;Gebäude F;Jonas;Richter;jonas.richter@example.com;2026-10-05 09:44:53.745027;;
+1;LT-1001;Laptop;Gebäude E;Anna;Keller;anna.keller@example.com;2026-09-25 09:44:53.745027;;
+3;MN-2001;Monitor;Gebäude E;Anna;Keller;anna.keller@example.com;2026-08-26 09:44:53.745027;2026-10-20 09:44:53.745027;
